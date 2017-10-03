@@ -1,0 +1,28 @@
+menu "esp32-mqtt-client configuration"
+
+
+config BLINK_GPIO
+    int "blink gpio number"
+	range 0 34
+	default 5
+	help
+		GPIO number (IOxx) to blink on and off.
+
+		Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
+
+		GPIOs 35-39 are input-only so cannot be used as outputs.
+ 
+
+config SSID
+    string "wireless ssid to connect to"
+    help
+        A string identifying the wireless network to connect to.
+
+
+config PASSPHRASE
+    string "passphrase to wireless network"
+    help
+        The passphrase to the specified wireless network.
+
+
+endmenu
