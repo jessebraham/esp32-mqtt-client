@@ -11,18 +11,44 @@ config BLINK_GPIO
 		Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
 
 		GPIOs 35-39 are input-only so cannot be used as outputs.
- 
 
-config SSID
+config WIFI_SSID
     string "wireless ssid to connect to"
+    default "myssid"
     help
         A string identifying the wireless network to connect to.
 
-
-config PASSPHRASE
+config WIFI_PASS
     string "passphrase to wireless network"
+    default "mypassword"
     help
-        The passphrase to the specified wireless network.
+        The passphrase (wpa or wpa2) to the specified wireless network.
+
+
+
+config MQTT_BROKER
+    string "mqtt broker to connect to"
+    default "broker.shiftr.io"
+    help
+        The hostname of the MQTT Broker to connect to.
+
+config MQTT_PORT
+    int "mqtt broker port"
+    default 1883
+    help
+        The port number to connect to on the MQTT server.
+
+config MQTT_USER
+    string "mqtt broker username"
+    default "try"
+    help
+        The username to authenticate with the MQTT Broker with.
+
+config MQTT_PASS
+    string "mqtt broker passphrase"
+    default "try"
+    help
+        The passphrase to authenticate the MQTT username.
 
 
 endmenu
