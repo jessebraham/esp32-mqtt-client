@@ -1,25 +1,53 @@
-#include <stdio.h>
+/* ************************************************************************* *
+ * esp32-mqtt-client-c
+ * 
+ * A simple MQTT client running on an ESP-WROOM-32 modules. Connects to the
+ * configured wireless network and communicates with the configured MQTT
+ * broker. 
+ * 
+ * Jesse Braham <jesse@beta7.io>
+ * October, 2017
+ * ************************************************************************* */
 
-#include "freertos/event_groups.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 #include "freertos/FreeRTOS.h"
+#include "freertos/event_groups.h"
 #include "freertos/task.h"
 
 #include "esp_event_loop.h"
 #include "esp_log.h"
+#include <esp_mqtt.h>
 #include "esp_system.h"
 #include "esp_wifi.h"
 
 
-// Run 'make menuconfig' to define the following values.
+// Define the GPIO pin (will be used shortly) and the wireless network's SSID
+// and passphrase. To configure these values, run 'make menuconfig'.
 #define BLINK_GPIO CONFIG_BLINK_GPIO
-#define SSID       CONFIG_SSID
-#define PASSPHRASE CONFIG_PASSPHRASE
+#define WIFI_SSID  CONFIG_WIFI_SSID
+#define WIFI_PASS  CONFIG_WIFI_PASS
+
+// Define the MQTT Broker's hostname, port, username and passphrase. To
+// configure these values, run 'make menuconfig'.
+#define MQTT_HOST CONFIG_MQTT_BROKER
+#define MQTT_PORT CONFIG_MQTT_PORT
+#define MQTT_USER CONFIG_MQTT_USER
+#define MQTT_PASS CONFIG_MQTT_PASS
 
 
-static EventGroupHandle_t wifi_event_group;
+static EventGroupHandle_t wifi_event_group = NULL;
+static TaskHandle_t task = NULL;
+
 const int CONNECTED_BIT = BIT0;
 
 
+/* ************************************************************************* *
+ * Initialize the TCP/IP stack and set the wi-fi default configuration and
+ * operating mode.
+ * ************************************************************************* */
 static void
 initialise_wifi(void)
 {
@@ -28,18 +56,22 @@ initialise_wifi(void)
 
     tcpip_adapter_init();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
+    ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK( esp_wifi_start() );
 }
 
+/* ************************************************************************* *
+ * Connect to the wireless network defined via menuconfig, using the supplied
+ * passphrase.
+ * ************************************************************************* */
 void
 wifi_connect(void)
 {
     wifi_config_t cfg = {
         .sta = {
-            .ssid     = SSID,
-            .password = PASSPHRASE,
+            .ssid     = WIFI_SSID,
+            .password = WIFI_PASS,
         },
     };
 
@@ -48,6 +80,13 @@ wifi_connect(void)
     ESP_ERROR_CHECK( esp_wifi_connect() );
 }
 
+
+/* ************************************************************************* *
+ * Main event loop handler. On system start, attempt to connect to the
+ * defined wireless network. If an IP address is acquired, set the 'Connected'
+ * bit for the Event Group, and start the MQTT client. On disconnect, stop the
+ * MQTT client and reset the 'Connected' bit.
+ * ************************************************************************* */
 static
 esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -58,8 +97,10 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
         break;
     case SYSTEM_EVENT_STA_GOT_IP:
         xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+        esp_mqtt_start(MQTT_HOST, MQTT_PORT, "esp-mqtt", MQTT_USER, MQTT_PASS);
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
+        esp_mqtt_stop();
         esp_wifi_connect();
         xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
         break;
@@ -70,21 +111,61 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
-void
-print_ip_task(void *pv_param)
+
+/* ************************************************************************* *
+ * The MQTT processing task. In an infinite loop, pushlish the defined payload
+ * to the defined channel, and wait 1000ms (1 second).
+ * ************************************************************************* */
+static void
+process(void *p)
 {
-    printf("print_ip_task started\n");
-    tcpip_adapter_ip_info_t ip_info;
+    static const char *payload = "world";
 
     for ( ;; )
     {
-        xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, true, true, portMAX_DELAY);
-        ESP_ERROR_CHECK( tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ip_info) );
-
-        printf("IP:\t%s\n", ip4addr_ntoa(&ip_info.ip));
+        esp_mqtt_publish("hello", (void *)payload, (int)strlen(payload), 0, false);
+        vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
+/* ************************************************************************* *
+ * The MQTT Status callback function. If the status is 'Connected', subscribe
+ * to the defined MQTT channel, and create a task to run the 'process' function
+ * implemented above. On disconnect, destroy the task.
+ * ************************************************************************* */
+static void
+mqtt_status_cb(esp_mqtt_status_t status)
+{
+    switch (status)
+    {
+    case ESP_MQTT_STATUS_CONNECTED:
+        esp_mqtt_subscribe("hello", 0);
+        xTaskCreatePinnedToCore(process, "process", 1024, NULL, 10, &task, 1);
+        break;
+    case ESP_MQTT_STATUS_DISCONNECTED:
+        vTaskDelete(task);
+        break;
+    }
+}
+
+/* ************************************************************************* *
+ * The MQTT Message callback function. When a message is received, print a
+ * message containing the topic, payload, and the length of the payload to the
+ * terminal.
+ * ************************************************************************* */
+static void
+mqtt_message_cb(const char *topic, uint8_t *payload, size_t len)
+{
+    printf("incoming\t%s:%s (%d)\n", topic, payload, (int)len);
+}
+
+
+/* ************************************************************************* *
+ * Main entry point. Start the event loop, assigning the above create Event
+ * Handler. Create the wi-fi's Event Group prior to initializing the wi-fi
+ * radio. Finally, initialize the MQTT client, specifying the status and
+ * message callback functions.
+ * ************************************************************************* */
 void
 app_main(void)
 {
@@ -92,5 +173,5 @@ app_main(void)
     wifi_event_group = xEventGroupCreate();
     initialise_wifi();
 
-    xTaskCreate(&print_ip_task, "print_ip_task", 2048, NULL, 5, NULL);
+    esp_mqtt_init(mqtt_status_cb, mqtt_message_cb, 256, 2000);
 }
