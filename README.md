@@ -9,6 +9,8 @@ A number of configuration parameters are required to build and run this project 
 
 To configure the required parameters, run `make menuconfig`.
 
+**BLINK_GPIO** - Set the pin of the LED; driven in an active-low configuration.  
+
 ### Wireless Network Configuration
 
 The following configuration is required for the Wirless Network connection:
@@ -24,3 +26,19 @@ The following configuration is required for the MQTT Broker connection:
 **MQTT_PORT** - The port that the MQTT Broker is running on.  
 **MQTT_USER** - Username to authenticate with the MQTT Broker.  
 **MQTT_PASS** - Passphrase of the MQTT user.  
+
+
+## Build, Flash and Monitor
+
+To build and flash the application, run the following:
+
+```bash
+$ make menuconfig  
+$ make flash
+```
+
+To view the status and output of the module, run:
+
+```bash
+$ make monitor
+```
