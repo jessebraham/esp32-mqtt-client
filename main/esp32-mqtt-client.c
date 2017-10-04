@@ -23,6 +23,7 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 
+#include "driver/gpio.h"
 #include "sdkconfig.h"
 
 
@@ -50,8 +51,8 @@ const int CONNECTED_BIT = BIT0;
  * Initialize the TCP/IP stack and set the wi-fi default configuration and
  * operating mode.
  * ************************************************************************* */
-static void
-initialise_wifi(void)
+void
+initialize_wifi(void)
 {
     // Disable wifi driver logging
     esp_log_level_set("wifi", ESP_LOG_NONE);
@@ -80,6 +81,26 @@ wifi_connect(void)
     ESP_ERROR_CHECK( esp_wifi_disconnect() );
     ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &cfg) );
     ESP_ERROR_CHECK( esp_wifi_connect() );
+}
+
+/* ************************************************************************* *
+ * Configure the IOMUX register for pad BLINK_GPIO. Some pads are muxed to
+ * GPIO on reset, but some default to other functions and will need to be
+ * switched to GPIO if selected. Set the GPIO direction as 'Output', and set
+ * the initial state of the pin to HIGH (1), as our LED is driven in an
+ * active-low configuration.
+ * ************************************************************************* */
+void
+initialize_gpio(void)
+{
+    gpio_pad_select_gpio(BLINK_GPIO);
+
+    // Set the GPIO as a push/pull output
+    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+
+    // Set the state of the pin to HIGH initially, as we're driving our LED in
+    // an active-low configuration.
+    gpio_set_level(BLINK_GPIO, 1);
 }
 
 
@@ -141,10 +162,12 @@ mqtt_status_cb(esp_mqtt_status_t status)
     switch (status)
     {
     case ESP_MQTT_STATUS_CONNECTED:
+        gpio_set_level(BLINK_GPIO, 0);
         esp_mqtt_subscribe("hello", 0);
         xTaskCreatePinnedToCore(process, "process", 1024, NULL, 10, &task, 1);
         break;
     case ESP_MQTT_STATUS_DISCONNECTED:
+        gpio_set_level(BLINK_GPIO, 1);
         vTaskDelete(task);
         break;
     }
@@ -171,9 +194,11 @@ mqtt_message_cb(const char *topic, uint8_t *payload, size_t len)
 void
 app_main(void)
 {
-    ESP_ERROR_CHECK( esp_event_loop_init(event_handler, NULL) );
+    initialize_gpio();
+
+    ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
     wifi_event_group = xEventGroupCreate();
-    initialise_wifi();
+    initialize_wifi();
 
     esp_mqtt_init(mqtt_status_cb, mqtt_message_cb, 256, 2000);
 }
