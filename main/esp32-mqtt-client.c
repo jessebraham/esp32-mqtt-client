@@ -23,6 +23,8 @@
 #include "esp_system.h"
 #include "esp_wifi.h"
 
+#include "sdkconfig.h"
+
 
 // Define the GPIO pin (will be used shortly) and the wireless network's SSID
 // and passphrase. To configure these values, run 'make menuconfig'.
