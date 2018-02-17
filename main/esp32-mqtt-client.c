@@ -5,8 +5,16 @@
  * configured wireless network and communicates with the configured MQTT
  * broker. 
  * 
- * Jesse Braham <jesse@beta7.io>
- * October, 2017
+ * Author:  Jesse Braham <jesse@beta7.io>
+ * Date:    February, 2017
+ * Version: 2
+ * 
+ * Changelog:
+ * ==========
+ * v2:
+ *  - an update to esp-idf seemingly broke things. non-volatile storage is now
+ *    explicitly initialized on startup.
+ * 
  * ************************************************************************* */
 
 #include <stdio.h>
@@ -24,6 +32,7 @@
 #include "esp_wifi.h"
 
 #include "driver/gpio.h"
+#include "nvs_flash.h"
 #include "sdkconfig.h"
 
 
@@ -81,6 +90,24 @@ wifi_connect(void)
     ESP_ERROR_CHECK( esp_wifi_disconnect() );
     ESP_ERROR_CHECK( esp_wifi_set_config(ESP_IF_WIFI_STA, &cfg) );
     ESP_ERROR_CHECK( esp_wifi_connect() );
+}
+
+/* ************************************************************************* *
+ * Initialize non-volatile storage. If there are no pages free, erase the
+ * contents of the flash memory, and attempt to initialize the storage again.
+ * ************************************************************************* */
+void
+initialize_nvs(void)
+{
+    esp_err_t ret = nvs_flash_init();
+
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES)
+    {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        ret = nvs_flash_init();
+    }
+
+    ESP_ERROR_CHECK( ret );
 }
 
 /* ************************************************************************* *
@@ -194,6 +221,7 @@ mqtt_message_cb(const char *topic, uint8_t *payload, size_t len)
 void
 app_main(void)
 {
+    initialize_nvs();
     initialize_gpio();
 
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
