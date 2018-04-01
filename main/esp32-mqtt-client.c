@@ -6,16 +6,24 @@
  * broker. 
  * 
  * Author:  Jesse Braham <jesse@beta7.io>
- * Date:    February, 2017
- * Version: 2
+ * Date:    February 2017 - April 2018
+ * Version: 3
  * 
  * Changelog:
  * ==========
  * v2:
- *  - an update to esp-idf seemingly broke things. non-volatile storage is now
- *    explicitly initialized on startup.
+ *  - an update to esp-idf seemingly broke things. non-volatile storage is
+ *    now explicitly initialized on startup.
+ * v3:
+ *  - configuration parameter renamed, BLINK_GPIO to LED_GPIO
+ *  - minor cleanup/reorganizing
+ *  - improved comments
  * 
- * ************************************************************************* */
+ * ************************************************************************ */
+
+// ---------------------------------------------------------------------------
+// INCLUDES
+// ---------------------------------------------------------------------------
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,7 +35,7 @@
 
 #include "esp_event_loop.h"
 #include "esp_log.h"
-#include <esp_mqtt.h>
+#include "esp_mqtt.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 
@@ -36,11 +44,20 @@
 #include "sdkconfig.h"
 
 
-// Define the GPIO pin (will be used shortly) and the wireless network's SSID
-// and passphrase. To configure these values, run 'make menuconfig'.
-#define LED_GPIO   CONFIG_LED_GPIO
-#define WIFI_SSID  CONFIG_WIFI_SSID
-#define WIFI_PASS  CONFIG_WIFI_PASS
+// ---------------------------------------------------------------------------
+// DEFINES
+// ---------------------------------------------------------------------------
+
+// Defines for logical states, just a bit more clear than using magic numbers.
+#define HIGH 1
+#define LOW  0
+
+// Define the GPIO pin for the LED connection idicator as well as the wireless
+// network's SSID and passphrase. To configure these values, run
+// 'make menuconfig'.
+#define LED_GPIO  CONFIG_LED_GPIO
+#define WIFI_SSID CONFIG_WIFI_SSID
+#define WIFI_PASS CONFIG_WIFI_PASS
 
 // Define the MQTT Broker's hostname, port, username and passphrase. To
 // configure these values, run 'make menuconfig'.
@@ -50,16 +67,50 @@
 #define MQTT_PASS CONFIG_MQTT_PASS
 
 
+// ---------------------------------------------------------------------------
+// GLOBALS
+// ---------------------------------------------------------------------------
+
 static EventGroupHandle_t wifi_event_group = NULL;
-static TaskHandle_t task = NULL;
+static TaskHandle_t       task             = NULL;
 
 const int CONNECTED_BIT = BIT0;
 
 
-/* ************************************************************************* *
- * Initialize the TCP/IP stack and set the wi-fi default configuration and
- * operating mode.
- * ************************************************************************* */
+// ---------------------------------------------------------------------------
+// FUNCTIONS
+// ---------------------------------------------------------------------------
+
+/* Initialize non-volatile storage. If there are no pages free, erase the
+ * contents of the flash memory, and attempt to initialize the storage
+ * again. */
+void initialize_nvs(void)
+{
+    esp_err_t ret = nvs_flash_init();
+
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES)
+    {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+
+    ESP_ERROR_CHECK( ret );
+}
+
+/* Configure the IOMUX register for the pad specified by LED_GPIO. Some pads
+ * are muxed to GPIO on reset, but some default to other functions and will
+ * need to be switched to GPIO if selected.
+ * Set the GPIO direction as 'Output', and set the initial state of the pin to
+ * HIGH (1), as our LED is driven in an active-low configuration. */
+void initialize_gpio(void)
+{
+    gpio_pad_select_gpio(LED_GPIO);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_level(LED_GPIO, HIGH);
+}
+
+/* Initialize the TCP/IP stack and set the Wi-Fi default configuration and
+ * operating mode. */
 void
 initialize_wifi(void)
 {
@@ -73,10 +124,8 @@ initialize_wifi(void)
     ESP_ERROR_CHECK( esp_wifi_start() );
 }
 
-/* ************************************************************************* *
- * Connect to the wireless network defined via menuconfig, using the supplied
- * passphrase.
- * ************************************************************************* */
+/* Connect to the wireless network defined via menuconfig, using the supplied
+ * passphrase. */
 void
 wifi_connect(void)
 {
@@ -92,51 +141,11 @@ wifi_connect(void)
     ESP_ERROR_CHECK( esp_wifi_connect() );
 }
 
-/* ************************************************************************* *
- * Initialize non-volatile storage. If there are no pages free, erase the
- * contents of the flash memory, and attempt to initialize the storage again.
- * ************************************************************************* */
-void
-initialize_nvs(void)
-{
-    esp_err_t ret = nvs_flash_init();
-
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES)
-    {
-        ESP_ERROR_CHECK( nvs_flash_erase() );
-        ret = nvs_flash_init();
-    }
-
-    ESP_ERROR_CHECK( ret );
-}
-
-/* ************************************************************************* *
- * Configure the IOMUX register for pad LED_GPIO. Some pads are muxed to
- * GPIO on reset, but some default to other functions and will need to be
- * switched to GPIO if selected. Set the GPIO direction as 'Output', and set
- * the initial state of the pin to HIGH (1), as our LED is driven in an
- * active-low configuration.
- * ************************************************************************* */
-void
-initialize_gpio(void)
-{
-    gpio_pad_select_gpio(LED_GPIO);
-
-    // Set the GPIO as a push/pull output
-    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
-
-    // Set the state of the pin to HIGH initially, as we're driving our LED in
-    // an active-low configuration.
-    gpio_set_level(LED_GPIO, 1);
-}
-
-
-/* ************************************************************************* *
- * Main event loop handler. On system start, attempt to connect to the
- * defined wireless network. If an IP address is acquired, set the 'Connected'
- * bit for the Event Group, and start the MQTT client. On disconnect, stop the
- * MQTT client and reset the 'Connected' bit.
- * ************************************************************************* */
+/* Main event loop handler.
+ * On system start, attempt to connect to the configured wireless network.
+ * If an IP address is acquired, set the 'Connected' bit for the Event Group,
+ * and start the MQTT client.
+ * On disconnect, stop the MQTT client and reset the 'Connected' bit. */
 static
 esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -161,11 +170,8 @@ esp_err_t event_handler(void *ctx, system_event_t *event)
     return ESP_OK;
 }
 
-
-/* ************************************************************************* *
- * The MQTT processing task. In an infinite loop, pushlish the defined payload
- * to the defined channel, and wait 1000ms (1 second).
- * ************************************************************************* */
+/* The MQTT processing task. In an infinite loop, pushlish the defined payload
+ * to the defined channel, and wait 1000ms (1 second). */
 static void
 process(void *p)
 {
@@ -173,51 +179,48 @@ process(void *p)
 
     for ( ;; )
     {
-        esp_mqtt_publish("hello", (void *)payload, (int)strlen(payload), 0, false);
+        esp_mqtt_publish("hello", (void *)payload, (int)strlen(payload),
+                         0, false);
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
 }
 
-/* ************************************************************************* *
- * The MQTT Status callback function. If the status is 'Connected', subscribe
- * to the defined MQTT channel, and create a task to run the 'process' function
- * implemented above. On disconnect, destroy the task.
- * ************************************************************************* */
+/* The MQTT Status callback function.
+ * If the status is 'Connected', subscribe to the defined MQTT channel, and
+ * create a task to run the 'process' function implemented above. Enable the
+ * LED as well.
+ * On disconnect, destroy the task and disable the LED. */
 static void
 mqtt_status_cb(esp_mqtt_status_t status)
 {
     switch (status)
     {
     case ESP_MQTT_STATUS_CONNECTED:
-        gpio_set_level(LED_GPIO, 0);
+        gpio_set_level(LED_GPIO, LOW);
         esp_mqtt_subscribe("hello", 0);
         xTaskCreatePinnedToCore(process, "process", 1024, NULL, 10, &task, 1);
         break;
     case ESP_MQTT_STATUS_DISCONNECTED:
-        gpio_set_level(LED_GPIO, 1);
+        gpio_set_level(LED_GPIO, HIGH);
         vTaskDelete(task);
         break;
     }
 }
 
-/* ************************************************************************* *
- * The MQTT Message callback function. When a message is received, print a
- * message containing the topic, payload, and the length of the payload to the
- * terminal.
- * ************************************************************************* */
+/* The MQTT message callback function. When a message is received, print the
+ * topic, payload, and the length of the payload to the terminal. */
 static void
 mqtt_message_cb(const char *topic, uint8_t *payload, size_t len)
 {
     printf("incoming\t%s:%s (%d)\n", topic, payload, (int)len);
 }
 
-
-/* ************************************************************************* *
- * Main entry point. Start the event loop, assigning the above create Event
- * Handler. Create the wi-fi's Event Group prior to initializing the wi-fi
- * radio. Finally, initialize the MQTT client, specifying the status and
- * message callback functions.
- * ************************************************************************* */
+/* Main entry point. Initialize the non-volatile storage and GPIO pins prior
+ * to beginning.
+ * Start the event loop, assigning the above create Event Handler.
+ * Create the Wi-Fi's Event Group prior to initializing the Wi-Fi radio.
+ * Finally, initialize the MQTT client, specifying the status and message
+ * callback functions.*/
 void
 app_main(void)
 {
