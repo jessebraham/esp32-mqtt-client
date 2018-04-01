@@ -38,7 +38,7 @@
 
 // Define the GPIO pin (will be used shortly) and the wireless network's SSID
 // and passphrase. To configure these values, run 'make menuconfig'.
-#define BLINK_GPIO CONFIG_BLINK_GPIO
+#define LED_GPIO   CONFIG_LED_GPIO
 #define WIFI_SSID  CONFIG_WIFI_SSID
 #define WIFI_PASS  CONFIG_WIFI_PASS
 
@@ -111,7 +111,7 @@ initialize_nvs(void)
 }
 
 /* ************************************************************************* *
- * Configure the IOMUX register for pad BLINK_GPIO. Some pads are muxed to
+ * Configure the IOMUX register for pad LED_GPIO. Some pads are muxed to
  * GPIO on reset, but some default to other functions and will need to be
  * switched to GPIO if selected. Set the GPIO direction as 'Output', and set
  * the initial state of the pin to HIGH (1), as our LED is driven in an
@@ -120,14 +120,14 @@ initialize_nvs(void)
 void
 initialize_gpio(void)
 {
-    gpio_pad_select_gpio(BLINK_GPIO);
+    gpio_pad_select_gpio(LED_GPIO);
 
     // Set the GPIO as a push/pull output
-    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+    gpio_set_direction(LED_GPIO, GPIO_MODE_OUTPUT);
 
     // Set the state of the pin to HIGH initially, as we're driving our LED in
     // an active-low configuration.
-    gpio_set_level(BLINK_GPIO, 1);
+    gpio_set_level(LED_GPIO, 1);
 }
 
 
@@ -189,12 +189,12 @@ mqtt_status_cb(esp_mqtt_status_t status)
     switch (status)
     {
     case ESP_MQTT_STATUS_CONNECTED:
-        gpio_set_level(BLINK_GPIO, 0);
+        gpio_set_level(LED_GPIO, 0);
         esp_mqtt_subscribe("hello", 0);
         xTaskCreatePinnedToCore(process, "process", 1024, NULL, 10, &task, 1);
         break;
     case ESP_MQTT_STATUS_DISCONNECTED:
-        gpio_set_level(BLINK_GPIO, 1);
+        gpio_set_level(LED_GPIO, 1);
         vTaskDelete(task);
         break;
     }

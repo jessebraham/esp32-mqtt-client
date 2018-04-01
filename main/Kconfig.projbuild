@@ -1,54 +1,43 @@
-menu "esp32-mqtt-client configuration"
+menu "esp32-mqtt-client"
 
-
-config BLINK_GPIO
-    int "blink gpio number"
-	range 0 34
-	default 5
-	help
-		GPIO number (IOxx) to blink on and off.
-
-		Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
-
-		GPIOs 35-39 are input-only so cannot be used as outputs.
 
 config WIFI_SSID
-    string "wireless ssid to connect to"
+    string "the ssid of the wireless network to connect to"
     default "myssid"
-    help
-        A string identifying the wireless network to connect to.
 
 config WIFI_PASS
-    string "passphrase to wireless network"
+    string "the passphrase for the specified network"
     default "mypassword"
-    help
-        The passphrase (wpa or wpa2) to the specified wireless network.
 
 
 
 config MQTT_BROKER
     string "mqtt broker to connect to"
     default "broker.shiftr.io"
-    help
-        The hostname of the MQTT Broker to connect to.
 
 config MQTT_PORT
     int "mqtt broker port"
     default 1883
-    help
-        The port number to connect to on the MQTT server.
 
 config MQTT_USER
     string "mqtt broker username"
     default "try"
-    help
-        The username to authenticate with the MQTT Broker with.
 
 config MQTT_PASS
     string "mqtt broker passphrase"
     default "try"
+
+
+config LED_GPIO
+    int "led gpio number"
+	range 0 34
+	default 5
     help
-        The passphrase to authenticate the MQTT username.
+		GPIO number (IOxx) to blink on and off.
+
+		Some GPIOs are used for other purposes (flash connections, etc.) and cannot be used to blink.
+
+		GPIOs 35-39 are input-only so cannot be used as outputs.
 
 
 endmenu
